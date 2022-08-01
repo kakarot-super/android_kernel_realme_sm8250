@@ -40,6 +40,8 @@
 #include <linux/kernel.h>
 #include <asm/unaligned.h>
 
+#include "lz4armv8/lz4accel.h"
+
 /*-*****************************
  *	Decompression functions
  *******************************/
@@ -338,65 +340,63 @@ static FORCE_INLINE Rvl_t read_variable_length(const BYTE **ip,
  * in order to remove useless branches during compilation optimization.
  */
 static FORCE_INLINE int
-LZ4_decompress_generic(const char *const src, char *const dst, int srcSize,
-               /*
-         * If endOnInput == endOnInputSize,
-         * this value is `dstCapacity`
-         */
-               int outputSize,
-               /* endOnOutputSize, endOnInputSize */
-               earlyEnd_directive partialDecoding,
-               /* noDict, withPrefix64k, usingExtDict */
-               dict_directive dict,
-               /* always <= dst, == dst when no prefix */
-               const BYTE *const lowPrefix,
-               /* only if dict == usingExtDict */
-               const BYTE *const dictStart,
-               /* note : = 0 if noDict */
-               const size_t dictSize)
+__LZ4_decompress_generic(const char *const src, char *const dst, const BYTE * ip, BYTE * op, int srcSize,
+		/*
+		 * If endOnInput == endOnInputSize,
+		 * this value is `dstCapacity`
+		 */
+		       int outputSize,
+		       /* endOnOutputSize, endOnInputSize */
+		       earlyEnd_directive partialDecoding,
+		       /* noDict, withPrefix64k, usingExtDict */
+		       dict_directive dict,
+		       /* always <= dst, == dst when no prefix */
+		       const BYTE *const lowPrefix,
+		       /* only if dict == usingExtDict */
+		       const BYTE *const dictStart,
+		       /* note : = 0 if noDict */
+		       const size_t dictSize)
 {
-    if ((src == NULL) || (outputSize < 0)) {
-        return -1;
-    }
+	if ((src == NULL) || (outputSize < 0)) {
+		return -1;
+	}
 
-    {
-        const BYTE *ip = (const BYTE *)src;
-        const BYTE *const iend = ip + srcSize;
+	{
+	        const BYTE * const iend = src + srcSize;
 
-        BYTE *op = (BYTE *)dst;
-        BYTE *const oend = op + outputSize;
-        BYTE *cpy;
+	        BYTE * const oend = dst + outputSize;
+		BYTE *cpy;
 
-        const BYTE *const dictEnd =
-            (dictStart == NULL) ? NULL : dictStart + dictSize;
+		const BYTE *const dictEnd =
+			(dictStart == NULL) ? NULL : dictStart + dictSize;
 
-        const int checkOffset = (dictSize < (int)(64 * KB));
+		const int checkOffset = (dictSize < (int)(64 * KB));
 
-        /* Set up the "end" pointers for the shortcut. */
-        const BYTE *const shortiend =
-            iend - 14 /*maxLL*/ - 2 /*offset*/;
-        const BYTE *const shortoend =
-            oend - 14 /*maxLL*/ - 18 /*maxML*/;
+		/* Set up the "end" pointers for the shortcut. */
+		const BYTE *const shortiend =
+			iend - 14 /*maxLL*/ - 2 /*offset*/;
+		const BYTE *const shortoend =
+			oend - 14 /*maxLL*/ - 18 /*maxML*/;
 
-        const BYTE *match;
-        size_t offset;
-        unsigned token;
-        size_t length;
+		const BYTE *match;
+		size_t offset;
+		unsigned token;
+		size_t length;
 
-        DEBUGLOG(5, "LZ4_decompress_generic (srcSize:%i, dstSize:%i)",
-             srcSize, outputSize);
+		DEBUGLOG(5, "LZ4_decompress_generic (srcSize:%i, dstSize:%i)",
+			 srcSize, outputSize);
 
-        /* Special cases */
-        assert(lowPrefix <= op);
-        if (unlikely(outputSize == 0)) {
-            /* Empty output buffer */
-            if (partialDecoding)
-                return 0;
-            return ((srcSize == 1) && (*ip == 0)) ? 0 : -1;
-        }
-        if (unlikely(srcSize == 0)) {
-            return -1;
-        }
+		/* Special cases */
+		assert(lowPrefix <= op);
+		if (unlikely(outputSize == 0)) {
+			/* Empty output buffer */
+			if (partialDecoding)
+				return 0;
+			return ((srcSize == 1) && (*ip == 0)) ? 0 : -1;
+		}
+		if (unlikely(srcSize == 0)) {
+			return -1;
+		}
 
         /* LZ4_FAST_DEC_LOOP:
      * designed for modern OoO performance cpus,
@@ -903,6 +903,32 @@ _output_error:
         return (int)(-(((const char *)ip) - src)) - 1;
     }
 }
+
+static FORCE_INLINE int LZ4_decompress_generic(
+	 const char * const src,
+	 char * const dst,
+	 int srcSize,
+		/*
+		 * If endOnInput == endOnInputSize,
+		 * this value is `dstCapacity`
+		 */
+	 int outputSize,
+	 /* full, partial */
+	 earlyEnd_directive partialDecoding,
+	 /* noDict, withPrefix64k, usingExtDict */
+	 dict_directive dict,
+	 /* always <= dst, == dst when no prefix */
+	 const BYTE * const lowPrefix,
+	 /* only if dict == usingExtDict */
+	 const BYTE * const dictStart,
+	 /* note : = 0 if noDict */
+	 const size_t dictSize
+	 )
+{
+	return __LZ4_decompress_generic(src, dst, (const BYTE *)src, (BYTE *)dst, srcSize, outputSize, partialDecoding, dict, lowPrefix, dictStart, dictSize);
+}
+
+
 int LZ4_decompress_safe(const char *source, char *dest, int compressedSize,
 			int maxDecompressedSize)
 {
@@ -1068,6 +1094,57 @@ int LZ4_decompress_safe_continue(LZ4_streamDecode_t *LZ4_streamDecode,
 
 	return result;
 }
+ssize_t LZ4_arm64_decompress_safe_partial(const void *source,
+			      void *dest,
+			      size_t inputSize,
+			      size_t outputSize,
+			      bool dip)
+{
+        uint8_t         *dstPtr = dest;
+        const uint8_t   *srcPtr = source;
+        ssize_t         ret;
+
+#ifdef __ARCH_HAS_LZ4_ACCELERATOR
+        /* Go fast if we can, keeping away from the end of buffers */
+        if (outputSize > LZ4_FAST_MARGIN && inputSize > LZ4_FAST_MARGIN && lz4_decompress_accel_enable()) {
+                ret = lz4_decompress_asm(&dstPtr, dest,
+                                         dest + outputSize - LZ4_FAST_MARGIN,
+                                         &srcPtr,
+                                         source + inputSize - LZ4_FAST_MARGIN,
+                                         dip);
+                if (ret)
+                        return -EIO;
+        }
+#endif
+        /* Finish in safe */
+	return __LZ4_decompress_generic(source, dest, srcPtr, dstPtr, inputSize, outputSize, partial_decode, noDict, (BYTE *)dest, NULL, 0);
+}
+
+ssize_t LZ4_arm64_decompress_safe(const void *source,
+			      void *dest,
+			      size_t inputSize,
+			      size_t outputSize,
+			      bool dip)
+{
+        uint8_t         *dstPtr = dest;
+        const uint8_t   *srcPtr = source;
+        ssize_t         ret;
+
+#ifdef __ARCH_HAS_LZ4_ACCELERATOR
+        /* Go fast if we can, keeping away from the end of buffers */
+        if (outputSize > LZ4_FAST_MARGIN && inputSize > LZ4_FAST_MARGIN && lz4_decompress_accel_enable()) {
+                ret = lz4_decompress_asm(&dstPtr, dest,
+                                         dest + outputSize - LZ4_FAST_MARGIN,
+                                         &srcPtr,
+                                         source + inputSize - LZ4_FAST_MARGIN,
+                                         dip);
+                if (ret)
+                        return -EIO;
+        }
+#endif
+        /* Finish in safe */
+	return __LZ4_decompress_generic(source, dest, srcPtr, dstPtr, inputSize, outputSize, decode_full_block, noDict, (BYTE *)dest, NULL, 0);
+}
 
 int LZ4_decompress_fast_continue(LZ4_streamDecode_t *LZ4_streamDecode,
 				 const char *source, char *dest,
@@ -1154,9 +1231,8 @@ EXPORT_SYMBOL(LZ4_decompress_safe_partial);
 EXPORT_SYMBOL(LZ4_decompress_fast);
 EXPORT_SYMBOL(LZ4_setStreamDecode);
 EXPORT_SYMBOL(LZ4_decompress_safe_continue);
-EXPORT_SYMBOL(LZ4_decompress_fast_continue);
-EXPORT_SYMBOL(LZ4_decompress_safe_usingDict);
-EXPORT_SYMBOL(LZ4_decompress_fast_usingDict);
+EXPORT_SYMBOL(LZ4_arm64_decompress_safe);
+EXPORT_SYMBOL(LZ4_arm64_decompress_safe_partial);
 
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("LZ4 decompressor");
