@@ -62,6 +62,7 @@ static int lz4k_decompress_crypto(struct crypto_tfm *tfm, const u8 *src,
     int ret;
 
 #if defined(CONFIG_ARM64) && defined(CONFIG_KERNEL_MODE_NEON)
+	pr_info_once("LZ4K: ARM64 ASM acceleration enabled and running!\n");
     ret = LZ4_arm64_decompress_safe(src, dst, slen, *dlen, false);
 #else
     ret = lz4k_decode(src, dst, slen, *dlen);
