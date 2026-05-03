@@ -21,6 +21,12 @@
 #endif
 #endif
 
+#ifdef CONFIG_OPLUS_FEATURE_EROFS
+extern int z_erofs_lz4_decompress_partial(const char *in, char *out, 
+                        unsigned int inlen, unsigned int outlen,
+                        bool use_lz4asm, bool inplace);
+#endif
+
 struct z_erofs_decompressor {
 	/*
 	 * if destpages have sparsed pages, fill them with bounce pages.
