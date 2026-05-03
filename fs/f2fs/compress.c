@@ -1417,7 +1417,7 @@ void f2fs_decompress_cluster(struct decompress_io_ctx *dic)
 
 	trace_f2fs_decompress_pages_end(dic->inode, dic->cluster_idx,
 							dic->clen, ret);
-	f2fs_decompress_end_io(dic, ret);
+	f2fs_decompress_end_io(dic, ret, true);
 }
 
 /*
@@ -2357,7 +2357,7 @@ static void f2fs_free_dic(struct decompress_io_ctx *dic)
 	kmem_cache_free(dic_entry_slab, dic);
 }
 
-static void f2fs_put_dic(struct decompress_io_ctx *dic)
+static void f2fs_put_dic(struct decompress_io_ctx *dic, bool in_task)
 {
 	if (refcount_dec_and_test(&dic->refcnt))
 		f2fs_free_dic(dic);
@@ -2367,7 +2367,7 @@ static void f2fs_put_dic(struct decompress_io_ctx *dic)
  * Update and unlock the cluster's pagecache pages, and release the reference to
  * the decompress_io_ctx that was being held for I/O completion.
  */
-static void __f2fs_decompress_end_io(struct decompress_io_ctx *dic, bool failed)
+static void __f2fs_decompress_end_io(struct decompress_io_ctx *dic, bool failed, bool in_task)
 {
 #ifdef CONFIG_F2FS_FS_COMPRESSION_FIXED_OUTPUT
 	pgoff_t start_idx = dic->cluster_idx << dic->log_cluster_size;
@@ -2509,47 +2509,50 @@ void f2fs_invalidate_compress_page(struct f2fs_sb_info *sbi, block_t blkaddr)
 }
 
 void f2fs_cache_compressed_page(struct f2fs_sb_info *sbi, struct page *page,
-						nid_t ino, block_t blkaddr)
+                        nid_t ino, block_t blkaddr)
 {
-	struct page *cpage;
-	int ret;
+    struct page *cpage;
+    int ret;
 
-	if (!test_opt(sbi, COMPRESS_CACHE))
-		return;
+    if (!test_opt(sbi, COMPRESS_CACHE))
+        return;
 
-	if (!f2fs_is_valid_blkaddr(sbi, blkaddr, DATA_GENERIC_ENHANCE_READ))
-		return;
+    if (!f2fs_is_valid_blkaddr(sbi, blkaddr, DATA_GENERIC_ENHANCE_READ))
+        return;
 
-	if (!f2fs_available_free_memory(sbi, COMPRESS_PAGE))
-		return;
+    if (!f2fs_available_free_memory(sbi, COMPRESS_PAGE))
+        return;
 
-	cpage = find_get_page(COMPRESS_MAPPING(sbi), blkaddr);
-	if (cpage) {
-		f2fs_put_page(cpage, 0);
-		return;
-	}
+    cpage = find_get_page(COMPRESS_MAPPING(sbi), blkaddr);
+    if (cpage) {
+        f2fs_put_page(cpage, 0);
+        return;
+    }
 
-	cpage = alloc_page(__GFP_NOWARN | __GFP_IO);
-	if (!cpage)
-		return;
+    cpage = alloc_page(__GFP_NOWARN | __GFP_IO);
+    if (!cpage)
+        return;
 
-	ret = add_to_page_cache_lru(cpage, COMPRESS_MAPPING(sbi),
-						blkaddr, GFP_NOFS);
-	if (ret) {
-		f2fs_put_page(cpage, 0);
-		return;
-	}
+    ret = add_to_page_cache_lru(cpage, COMPRESS_MAPPING(sbi),
+                        blkaddr, GFP_NOFS);
+    if (ret) {
+        put_page(cpage);
+        return;
+    }
 
-	set_page_private_data(cpage, ino);
+    set_page_private_data(cpage, ino);
+    copy_page(page_address(cpage), page_address(page));
 
-        copy_page(page_address(cpage), page_address(page));
-	if (!f2fs_is_valid_blkaddr(sbi, blkaddr, DATA_GENERIC_ENHANCE_READ))
-		goto out;
+    if (!f2fs_is_valid_blkaddr(sbi, blkaddr, DATA_GENERIC_ENHANCE_READ))
+        goto out;
 
-	SetPageUptodate(cpage);
-	f2fs_put_page(cpage, 1);
+    SetPageUptodate(cpage);
+    f2fs_put_page(cpage, 1);
+    return;
+
+out:
+    f2fs_put_page(cpage, 1);
 }
-
 bool f2fs_load_compressed_page(struct f2fs_sb_info *sbi, struct page *page,
 								block_t blkaddr)
 {

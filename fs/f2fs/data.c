@@ -172,7 +172,7 @@ static void f2fs_finish_read_bio(struct bio *bio)
 		if (f2fs_is_compressed_page(page)) {
 			if (bio->bi_status)
 				f2fs_end_read_compressed_page(page, true, 0);
-			f2fs_put_page_dic(page);
+			f2fs_put_page_dic(page, true);
 			continue;
 		}
 
@@ -2455,7 +2455,7 @@ submit_and_realloc:
 			if (IS_ERR(bio)) {
 
 				ret = PTR_ERR(bio);
-				f2fs_decompress_end_io(dic, ret);
+				f2fs_decompress_end_io(dic, ret, true);
 				f2fs_put_dnode(&dn);
 				*bio_ret = NULL;
 				return ret;
