@@ -1271,6 +1271,7 @@ int LZ4_compress_fast_continue(LZ4_stream_t *LZ4_stream, const char *source,
 	}
 }
 EXPORT_SYMBOL(LZ4_compress_fast_continue);
+EXPORT_SYMBOL(LZ4_arm64_decompress_safe);
 
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("LZ4 compressor");
