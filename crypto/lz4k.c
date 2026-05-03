@@ -35,20 +35,22 @@ static void lz4k_exit(struct crypto_tfm *tfm)
 	vfree(ctx->lz4k_comp_mem);
 }
 
-static int lz4k_compress_crypto(struct crypto_tfm *tfm, const u8 *src, unsigned int slen, u8 *dst, unsigned int *dlen)
+static int lz4k_decompress_crypto(struct crypto_tfm *tfm, const u8 *src,
+				   unsigned int slen, u8 *dst, unsigned int *dlen)
 {
 	struct lz4k_ctx *ctx = crypto_tfm_ctx(tfm);
-	int ret;
+	int out_len;
 
-	ret = lz4k_encode(ctx->lz4k_comp_mem, src, dst, slen, *dlen, 0);
+#if defined(CONFIG_ARM64) && defined(CONFIG_KERNEL_MODE_NEON)
+	out_len = lz4k_arm64_decode(src, dst, slen, *dlen);
+#else
+	out_len = lz4k_decode(src, dst, slen, *dlen);
+#endif
 
-	if (ret < 0) {
+	if (out_len < 0)
 		return -EINVAL;
-	}
 
-	if (ret)
-		*dlen = ret;
-
+	*dlen = out_len;
 	return 0;
 }
 
