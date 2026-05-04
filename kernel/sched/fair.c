@@ -5960,7 +5960,7 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	if (task_sleep && rq->nr_running == 1)
 		flags |= DEQUEUE_IDLE;
 
-	util_est_dequeue(&rq->cfs, p);
+	util_est_dequeue(&rq->cfs, p, flags & DEQUEUE_SLEEP);
 
 #ifdef CONFIG_SCHED_BORE
 	if (task_sleep) {
