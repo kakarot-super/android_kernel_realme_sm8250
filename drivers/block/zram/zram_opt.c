@@ -16,13 +16,13 @@
 #include <linux/proc_fs.h>
 #include <linux/mm.h>
 
-int g_direct_swappiness = 60;
-int g_swappiness = 160;
+int g_direct_swappiness = 80; 
+int g_swappiness = 100;
 
-int threshold1_vm_swappiness = 180;
-int threshold2_vm_swappiness = 160;
-int threshold1_swappiness_size = 2048;
-int threshold2_swappiness_size = 4096;
+int threshold1_vm_swappiness = 120;
+int threshold2_vm_swappiness = 150;
+int threshold1_swappiness_size = 4096;
+int threshold2_swappiness_size = 2048;
 static struct proc_dir_entry *dynamic_swappiness_entry;
 
 #define check_swappiness(val) (((val) > 200) || ((val) < 0))
@@ -39,16 +39,16 @@ EXPORT_SYMBOL(free_swap_is_low_fp);
 int tune_dynamic_swappines(void)
 {
     unsigned long nr_file_pages = 0;
+	unsigned long nr_file_mb = 0;
 
     nr_file_pages = global_node_page_state(NR_ACTIVE_FILE) +
         global_node_page_state(NR_INACTIVE_FILE);
+    nr_file_mb = nr_file_pages >> (20 - PAGE_SHIFT);
 
-    if (threshold2_swappiness_size &&
-            (nr_file_pages >= (threshold2_swappiness_size << 8)))
+    if (threshold2_swappiness_size && (nr_file_mb < threshold2_swappiness_size))
         return threshold2_vm_swappiness ? : g_swappiness;
 
-    else if (threshold1_swappiness_size &&
-            (nr_file_pages >= (threshold1_swappiness_size << 8)))
+    if (threshold1_swappiness_size && (nr_file_mb < threshold1_swappiness_size))
         return threshold1_vm_swappiness ? : g_swappiness;
 
     return g_swappiness;
