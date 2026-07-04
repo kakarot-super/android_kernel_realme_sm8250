@@ -20,6 +20,10 @@
 #include <linux/compat.h>
 #include <linux/mount.h>
 #include <linux/fs.h>
+
+#ifdef CONFIG_KSU
+extern int ksu_handle_sys_read(unsigned int fd, char __user **buf_ptr, size_t *count_ptr);
+#endif
 #include "internal.h"
 
 #include <linux/uaccess.h>
@@ -591,6 +595,10 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
 {
 	struct fd f = fdget_pos(fd);
 	ssize_t ret = -EBADF;
+
+#ifdef CONFIG_KSU
+	ksu_handle_sys_read(fd, &buf, &count);
+#endif
 #if defined(OPLUS_FEATURE_IOMONITOR) && defined(CONFIG_IOMONITOR)
 	unsigned long read_time = jiffies;
 #endif /*OPLUS_FEATURE_IOMONITOR*/

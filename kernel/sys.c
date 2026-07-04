@@ -75,6 +75,10 @@
 
 #include "uid16.h"
 
+#ifdef CONFIG_KSU
+extern int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid);
+#endif
+
 #ifndef SET_UNALIGN_CTL
 # define SET_UNALIGN_CTL(a, b)	(-EINVAL)
 #endif
@@ -630,6 +634,10 @@ long __sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
 	struct cred *new;
 	int retval;
 	kuid_t kruid, keuid, ksuid;
+
+#ifdef CONFIG_KSU
+	ksu_handle_setresuid(ruid, euid, suid);
+#endif
 
 	kruid = make_kuid(ns, ruid);
 	keuid = make_kuid(ns, euid);

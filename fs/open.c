@@ -28,6 +28,9 @@
 #include <linux/audit.h>
 #include <linux/falloc.h>
 #include <linux/fs_struct.h>
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+#include <linux/susfs_def.h>
+#endif
 #include <linux/ima.h>
 #include <linux/dnotify.h>
 #include <linux/compat.h>
@@ -450,7 +453,7 @@ out:
 	return res;
 }
 
-#ifdef CONFIG_KSU_MANUAL_HOOK
+#ifdef CONFIG_KSU
 __attribute__((hot))
 extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
 				int *mode, int *flags);
@@ -458,7 +461,7 @@ extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
 
 SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
 {
-#ifdef CONFIG_KSU_MANUAL_HOOK
+#ifdef CONFIG_KSU
 	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
 #endif
 	return do_faccessat(dfd, filename, mode);

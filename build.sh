@@ -41,6 +41,8 @@ fi
 export CLANG_PATH=$KERNEL_ROOT/clang-10/bin
 export PATH=$CLANG_PATH:$PATH
 export CROSS_COMPILE=aarch64-linux-gnu-
+export CCACHE_DIR=$HOME/.cache/ccache
+export CCACHE_MAXSIZE=5G
 
 ANYKERNEL_NAME=C15PORT
 
@@ -50,13 +52,15 @@ echo
 echo "Kernel is going to be built using $KERNEL_DEFCONFIG."
 echo
 
-MAKE_FLAGS="ARCH=arm64 AR=llvm-ar CC=clang NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 O=out"
+MAKE_FLAGS="ARCH=arm64 AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 O=out"
 
-make $MAKE_FLAGS $KERNEL_DEFCONFIG
+make CC="ccache clang" $MAKE_FLAGS $KERNEL_DEFCONFIG
 
-make $MAKE_FLAGS -j$(nproc)
+make CC="ccache clang" $MAKE_FLAGS -j$(nproc)
 
 echo "Build Complete."
+echo
+ccache -s
 
 IMAGE_OUT=$KERNEL_ROOT/out/arch/arm64/boot
 
